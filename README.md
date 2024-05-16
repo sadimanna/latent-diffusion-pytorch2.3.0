@@ -25,7 +25,7 @@
 - Updated the code for compatibility with PyTorch 2.3.0 and PyTorch Lightning 2.2.3.
 - torchmetrics should still be 0.11.4.
 - pydantic-2.7.1 has compatibility issues with lightly-1.4+ and needs to be downgraded if pydantic-2.7.1 is already installed. The error will pop out when installing. Downgrading pydantic does not seem to cause any compatibility issues with other libraries.
-- pyYAML-6.0.1 was installed too as it was causing an error when installing Pytorch Lightning.
+- pyYAML-6.0.1 was installed too as an older version was causing an error when installing Pytorch Lightning.
 - `Trainer.add_argparse_args()` has been deprecated in PyTorch-2.0+. However, adding all the args manually seemed too cumbersome. Hence, added `add_argparse_args` and other relevant functions from an old PyTorch source code in `ldm/plargparse.py` and `ldm/plparsing.py`, and used `add_argparse_args(Trainer, parser)` instead. Works the same.
 - Finally, users should change the strategy to `ddp` or whatever suits best for them. The current code has been set up to run on a single GPU. Line 525 in `main.py` has been commented out for the purpose.
 - PyTorch Lightning-2.2.3 does not support `optimizer_idx` in `training_step`. Hence, serialized the execution of optimizer operations in `training_step` as mentioned in the docs. Also, `self.automatic_optimization` needs to be set to `False`.
