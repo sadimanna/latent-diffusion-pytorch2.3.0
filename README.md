@@ -11,8 +11,8 @@
 [arXiv](https://arxiv.org/abs/2112.10752) | [BibTeX](#bibtex)
 
 <p align="center">
-<img width=480 src=assets/results.gif />
-<img width=480 src=assets/modelfigure.png />
+<img width=256 src=assets/results.gif />
+<img width=256 src=assets/modelfigure.png />
 </p>
 
 ## News
