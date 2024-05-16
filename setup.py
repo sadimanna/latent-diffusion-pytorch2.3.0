@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='latent-diffusion',
-    version='0.0.1',
+    version='2024.5.16',
     description='',
     packages=find_packages(),
     install_requires=[
