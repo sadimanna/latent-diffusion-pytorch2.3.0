@@ -1,4 +1,6 @@
+from packaging import version
 import torch
+import numpy as np
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from contextlib import contextmanager
@@ -7,6 +9,7 @@ from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
+from ldm.modules.ema import LitEma
 
 from ldm.util import instantiate_from_config
 
@@ -59,6 +62,9 @@ class VQModel(pl.LightningModule):
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
         self.scheduler_config = scheduler_config
         self.lr_g_factor = lr_g_factor
+
+        self.automatic_optimization = False
+        self.accumulate_interval = 1
 
     @contextmanager
     def ema_scope(self, context=None):
@@ -145,21 +151,42 @@ class VQModel(pl.LightningModule):
         x = self.get_input(batch, self.image_key)
         xrec, qloss, ind = self(x, return_pred_indices=True)
 
-        if optimizer_idx == 0:
-            # autoencode
-            aeloss, log_dict_ae = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train",
-                                            predicted_indices=ind)
+        opt1, opt2 = self.optimizers()
+        sch1, sch2 = self.lr_schedulers()
 
-            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
-            return aeloss
+        optimizer_idx = 0
+        # autoencode
+        aeloss, log_dict_ae = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
+                                        last_layer=self.get_last_layer(), split="train",
+                                        predicted_indices=ind)
 
-        if optimizer_idx == 1:
-            # discriminator
-            discloss, log_dict_disc = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")
-            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
-            return discloss
+        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
+        # return aeloss
+        if batch_idx % self.accumulate_interval == 0:
+            opt1.zero_grad()
+        self.manual_backward(aeloss)
+        # accumulate gradients of `n` batches
+        if (batch_idx + 1) % self.accumulate_interval == 0:
+            opt1.step()
+            # opt1.zero_grad()
+            if sch1 is not None:
+                sch1.step()
+
+        optimizer_idx = 1
+        # discriminator
+        discloss, log_dict_disc = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
+                                        last_layer=self.get_last_layer(), split="train")
+        self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
+        # return discloss
+        if batch_idx % self.accumulate_interval == 0:
+            opt2.zero_grad()
+        self.manual_backward(discloss)
+        # accumulate gradients of `n` batches
+        if (batch_idx + 1) % self.accumulate_interval == 0:
+            opt2.step()
+            # opt2.zero_grad()
+            if sch2 is not None:
+                sch2.step()
 
     def validation_step(self, batch, batch_idx):
         log_dict = self._validation_step(batch, batch_idx)
@@ -214,18 +241,18 @@ class VQModel(pl.LightningModule):
             print("Setting up LambdaLR scheduler...")
             scheduler = [
                 {
-                    'scheduler': LambdaLR(opt_ae, lr_lambda=scheduler.schedule),
+                    'scheduler': torch.optim.lr_scheduler.LambdaLR(opt_ae, lr_lambda=scheduler.schedule),
                     'interval': 'step',
                     'frequency': 1
                 },
                 {
-                    'scheduler': LambdaLR(opt_disc, lr_lambda=scheduler.schedule),
+                    'scheduler': torch.optim.lr_scheduler.LambdaLR(opt_disc, lr_lambda=scheduler.schedule),
                     'interval': 'step',
                     'frequency': 1
                 },
             ]
             return [opt_ae, opt_disc], scheduler
-        return [opt_ae, opt_disc], []
+        return [opt_ae, opt_disc], [None, None]
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight
@@ -309,6 +336,8 @@ class AutoencoderKL(pl.LightningModule):
             self.monitor = monitor
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
+        
+        self.automatic_optimization = False
 
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
@@ -348,26 +377,42 @@ class AutoencoderKL(pl.LightningModule):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx): #, optimizer_idx):
         inputs = self.get_input(batch, self.image_key)
         reconstructions, posterior = self(inputs)
 
-        if optimizer_idx == 0:
-            # train encoder+decoder+logvar
-            aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+        opt1, opt2 = self.optimizers()
+
+        optimizer_idx = 0
+        # train encoder+decoder+logvar
+        aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+                                        last_layer=self.get_last_layer(), split="train")
+        self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+        # return aeloss
+        if batch_idx % self.accumulate_interval == 0:
+            opt1.zero_grad()
+        self.manual_backward(aeloss)
+        # accumulate gradients of `n` batches
+        if (batch_idx + 1) % self.accumulate_interval == 0:
+            opt1.step()
+            # opt1.zero_grad()
+
+        optimizer_idx = 1
+        # train the discriminator
+        discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
-            self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            return aeloss
 
-        if optimizer_idx == 1:
-            # train the discriminator
-            discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                                last_layer=self.get_last_layer(), split="train")
-
-            self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            return discloss
+        self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+        # return discloss
+        if batch_idx % self.accumulate_interval == 0:
+            opt2.zero_grad()
+        self.manual_backward(discloss)
+        # accumulate gradients of `n` batches
+        if (batch_idx + 1) % self.accumulate_interval == 0:
+            opt2.step()
+            # opt2.zero_grad()
 
     def validation_step(self, batch, batch_idx):
         inputs = self.get_input(batch, self.image_key)
