@@ -1,11 +1,4 @@
 # Latent Diffusion Models
-[arXiv](https://arxiv.org/abs/2112.10752) | [BibTeX](#bibtex)
-
-<p align="center">
-<img src=assets/results.gif />
-</p>
-
-
 
 [**High-Resolution Image Synthesis with Latent Diffusion Models**](https://arxiv.org/abs/2112.10752)<br/>
 [Robin Rombach](https://github.com/rromb)\*,
@@ -15,8 +8,11 @@
 [Björn Ommer](https://hci.iwr.uni-heidelberg.de/Staff/bommer)<br/>
 \* equal contribution
 
+[arXiv](https://arxiv.org/abs/2112.10752) | [BibTeX](#bibtex)
+
 <p align="center">
-<img src=assets/modelfigure.png />
+<img width=480 src=assets/results.gif />
+<img width=480 src=assets/modelfigure.png />
 </p>
 
 ## News
