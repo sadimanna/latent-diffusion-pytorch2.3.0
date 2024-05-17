@@ -26,7 +26,7 @@
 - Finally, users should change the strategy to `ddp` or whatever suits best for them. The current code has been set up to run on a single GPU. Line 525 in `main.py` has been commented out for the purpose.
 - PyTorch Lightning-2.2.3 does not support `optimizer_idx` in `training_step`. Hence, serialized the execution of optimizer operations in `training_step` as mentioned in the docs. Also, `self.automatic_optimization` needs to be set to `False`.
 - `accumulate_grad_batches` in `pl.Trainer` is not supported when `self.automatic_optimization` is set to `False`. Hence, added a provision for gradient accumulation manually in the `training_step`.
-- Replaced deprecated `TestTubeLogger` with `TensorBoardLogger` but forgot to change the name. It still creates a folder named `testtube` inside the log directory.
+- Replaced deprecated `TestTubeLogger` with `TensorBoardLogger` and changed the name to `tensorboard`. It will create a folder named `tensorboard` inside the log directory.
 
 
 ### July 2022
