@@ -1,0 +1,7 @@
+numpy
+torch==2.3.0+cu121
+torchvision
+PyYAML==6.0.1
+pytorch_lightning==2.2.3
+torchmetrics==0.11.4
+torch-fidelity
