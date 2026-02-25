@@ -133,7 +133,9 @@ if __name__ == "__main__":
                 uc = model.get_learned_conditioning(opt.n_samples * [""])
             for n in trange(opt.n_iter, desc="Sampling"):
                 c = model.get_learned_conditioning(opt.n_samples * [prompt])
-                shape = [4, opt.H//8, opt.W//8]
+                # derive latent channel count from the model to avoid config/ckpt mismatches
+                n_channels = model.model.diffusion_model.in_channels
+                shape = [n_channels, opt.H//8, opt.W//8]
                 samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                  conditioning=c,
                                                  batch_size=opt.n_samples,
